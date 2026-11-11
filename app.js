@@ -6,17 +6,17 @@ const sample=`[21:04:12] John Doe says: We got everyone? Good. Let's get to work
 [21:04:38] John Doe says (low): Keep an eye on that gate.
 [21:04:44] [Radio] Jane Doe: Copy that. We're ready on this end.
 [21:04:51] (( Jane Doe: Give me a second to grab a screenshot. ))`;
-const colors={callPickup:['Call picked up','#ffff00'],prisonPA:['Prison PA / intercom','#3896f3'],inventoryHeader:['Inventory header','#00d000'],inventoryItem:['Inventory items','#ffff00'],shownItem:['Shown items','#56d64b'],scamPhone:['Scam phone messages','#eda841'],takenItem:['Taken item','#56d64b'],shout:['Shouts','#f1f1f1'],propertyCash:['Property transfers','#eda841'],factionHeading:['Faction heading','#00aaff'],factionMember:['Faction members','#939799'],infoNotice:['Info notices','#f1f1f1'],infoLabel:['[INFO] label','#00aaff'],command:['Info commands','#ffba00'],whisper:['Whispers','#ffba00'],carWhisper:['Car whispers','#fbf724'],phone:['Phone · other caller','#fbf724'],pm:['Private messages','#fbf724'],megaphone:['Megaphone','#fbf724'],advert:['Advertisements','#80e500'],transaction:['Item transfers','#56d64b'],speech:['Normal text','#c6c4c4'],action:['/me · /ame','#c2a3da'],lower:['[lower]','#5a5a5b'],low:['[low]','#939799'],death:['Death / failure','#f00000'],important:['Important info','#fbf724'],success:['Success','#56d64b'],warning:['Warning','#eda841'],information:['Information','#3896f3'],white:['Default white','#f1f1f1'],radio:['Radio · light','#ffec8b'],radioDark:['Radio · dark','#a19558'],department:['Department','#ccca15'],vessel:['Vessel traffic','#33c1c9'],alert:['[!] messages','#ff00bc'],ooc:['OOC','#a8b8d8'],bg:['Background','#15181e']};
+const colors={messageFrom:['Message from','#ffff00'],messageSent:['Message sent to','#eda841'],callPickup:['Call picked up','#ffff00'],prisonPA:['Prison PA / intercom','#3896f3'],inventoryHeader:['Inventory header','#00d000'],inventoryItem:['Inventory items','#ffff00'],shownItem:['Shown items','#56d64b'],scamPhone:['Scam phone messages','#eda841'],takenItem:['Taken item','#56d64b'],shout:['Shouts','#f1f1f1'],propertyCash:['Property transfers','#eda841'],factionHeading:['Faction heading','#00aaff'],factionMember:['Faction members','#939799'],infoNotice:['Info notices','#f1f1f1'],infoLabel:['[INFO] label','#00aaff'],command:['Info commands','#ffba00'],whisper:['Whispers','#ffba00'],carWhisper:['Car whispers','#fbf724'],phone:['Phone · other caller','#fbf724'],pm:['Private messages','#fbf724'],megaphone:['Megaphone','#fbf724'],advert:['Advertisements','#80e500'],transaction:['Item transfers','#56d64b'],speech:['Normal text','#c6c4c4'],action:['/me · /ame','#c2a3da'],lower:['[lower]','#5a5a5b'],low:['[low]','#939799'],death:['Death / failure','#f00000'],important:['Important info','#fbf724'],success:['Success','#56d64b'],warning:['Warning','#eda841'],information:['Information','#3896f3'],white:['Default white','#f1f1f1'],radio:['Radio · light','#ffec8b'],radioDark:['Radio · dark','#a19558'],department:['Department','#ccca15'],vessel:['Vessel traffic','#33c1c9'],alert:['[!] messages','#ff00bc'],ooc:['OOC','#a8b8d8'],bg:['Background','#15181e']};
 const palette=document.querySelector('.palette');palette.replaceChildren();
 for(const [id,[label,color]] of Object.entries(colors)){const l=document.createElement('label'),i=document.createElement('input');i.type='color';i.id=id;i.value=color;l.append(document.createTextNode(label),i);palette.append(l)}
-const ids=['textAnchor','textOffset','wrapWidth','exportFormat','jpegQuality','jpegMatte','backgroundX','backgroundY','dragMode','backgroundZoom','character','text','timestamps','font','size','width','height','spacing','outline','padding','bold','transparent',...Object.keys(colors)];
+const ids=['censorMode','textAnchor','textOffset','wrapWidth','exportFormat','jpegQuality','jpegMatte','backgroundX','backgroundY','dragMode','backgroundZoom','character','text','timestamps','font','size','width','height','spacing','outline','padding','bold','transparent',...Object.keys(colors)];
 let image=null,imageData=null,pos=null,hidden=new Set(),drawn=[],drag=null;
 let jpegPreviewTimer=null,jpegPreviewRevision=0,jpegPreviewURL=null,jpegPreviewBusy=false,draftTimer=null,renderFrame=null;
 const types=Object.keys(colors).filter(x=>x!=='bg');
 for(const type of types){let l=document.createElement('label'),i=document.createElement('input');i.type='checkbox';i.checked=true;i.addEventListener('change',()=>{i.checked?hidden.delete(type):hidden.add(type);render()});l.append(i,document.createTextNode(colors[type][0]));$('filters').append(l)}
 function state(){return {...Object.fromEntries(ids.map(id=>[id,$(id).type==='checkbox'?$(id).checked:$(id).value])),paletteVersion:2}}
 function status(s){$('status').textContent=s}
-function load(s){for(const id of ids)if(s[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!s[id];else $(id).value=s[id]}}
+function load(s){$('censorMode').value=s.censorMode||'black';for(const id of ids)if(s[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!s[id];else $(id).value=s[id]}}
 function rpFirstParts(text){
  const clean=text.replace(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/,'');
  const quoted=clean.match(/^\*(?!\*)\s*(.+?)\s+["“]([\s\S]+)["”]\s*$/);
@@ -24,6 +24,8 @@ function rpFirstParts(text){
  return null;
 }
 function classify(text){
+ if(/^(?:\([^\r\n)]*\)\s*)?Message from\b/i.test(text))return 'messageFrom';
+ if(/^(?:\([^\r\n)]*\)\s*)?Message sent to\b/i.test(text))return 'messageSent';
  if(/^You have picked up the call\.\s*$/i.test(text))return 'callPickup';
  if(/^The other party has hung up the call\.\s*$/i.test(text))return 'white';
  if(/^(?:\*{1,2}\s*)?\[(?:PRISON\s+PA\b[^\]]*|[^\]\r\n]*\bIntercom)\]\s*:?/i.test(text))return 'prisonPA';
@@ -65,8 +67,10 @@ if(/^\[(?:death|failure|failed|error)\]/i.test(text))return 'death';
 if(/^\[(?:important|important info)\]/i.test(text))return 'important';
 if(/^\[success\]/i.test(text))return 'success';
 if(/^\[warning\]/i.test(text))return 'warning';
+if(/^\[INFO\]\s*You have started to install a skimmer on this ATM[.!]?\s*$/i.test(text))return 'information';
 if(/^\[(?:info|information)\]/i.test(text))return 'information';
 if(/^\[white\]/i.test(text))return 'white';
+if(/\(\d+(?:\.\d+)?\s*g\)\s*$/i.test(text))return 'inventoryItem';
 return 'speech';
 }
 function parse(line){let stamp=line.match(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/)?.[0]||'';let text=line.slice(stamp.length).replace(/^\[CHAT\]\s*/,'');let type=classify(text);text=text.replace(/^\/(?:a?me|do)\s+/i,'* ').replace(/^\/b\s+(.+)$/i,'(( $1 ))');return {text:($('timestamps').checked?stamp:'')+text,type}}
@@ -136,10 +140,26 @@ function redactSegments(parts,initial=false){
  return out;
 }
 function paintChatSegment(c,seg,x,y,size){
- if(seg.redacted){c.fillStyle='#000';c.fillRect(x-0.5,y-1,c.measureText(seg.text).width+1,size+3);return;}
+ if(seg.redacted){
+  const mode=$('censorMode').value,w=c.measureText(seg.text).width,h=size+3;
+  if(mode==='invisible')return;
+  c.save();
+  if(mode==='mosaic'){
+   const tile=Math.max(3,Math.round(size/3)),pad=Math.ceil(c.lineWidth/2)+1;
+   const source=document.createElement('canvas');source.width=Math.max(1,Math.ceil(w)+pad*2);source.height=Math.ceil(h)+pad*2;
+   const sc=source.getContext('2d');sc.font=c.font;sc.textBaseline=c.textBaseline;sc.lineJoin=c.lineJoin;sc.lineWidth=c.lineWidth;sc.strokeStyle=c.strokeStyle;sc.fillStyle=seg.color;
+   if(sc.lineWidth)sc.strokeText(seg.text,pad,pad);sc.fillText(seg.text,pad,pad);
+   const pixels=document.createElement('canvas');pixels.width=Math.max(1,Math.ceil(source.width/tile));pixels.height=Math.max(1,Math.ceil(source.height/tile));
+   pixels.getContext('2d').drawImage(source,0,0,pixels.width,pixels.height);
+   c.imageSmoothingEnabled=false;c.drawImage(pixels,x-pad,y-pad,source.width,source.height);
+  }else if(mode==='blur'){
+   c.filter=`blur(${Math.max(3,size*0.3)}px)`;c.fillStyle=seg.color;if(c.lineWidth)c.strokeText(seg.text,x,y);c.fillText(seg.text,x,y);
+  }else{c.fillStyle='#000';c.fillRect(x-0.5,y-1,w+1,h);}
+  c.restore();return;
+ }
  if(c.lineWidth)c.strokeText(seg.text,x,y);c.fillStyle=seg.color;c.fillText(seg.text,x,y);
 }
-$('copyRedaction').onclick=async()=>{try{await navigator.clipboard.writeText('÷');status('Copied ÷ — wrap text in ÷…÷ to black it out.')}catch{const input=$('redactionSymbol');input.hidden=false;input.select();status('Select and copy the ÷ symbol.')}};
+$('copyRedaction').onclick=async()=>{try{await navigator.clipboard.writeText('÷');status('Copied ÷ — wrap text in ÷…÷ to apply the selected censor style.')}catch{const input=$('redactionSymbol');input.hidden=false;input.select();status('Select and copy the ÷ symbol.')}};
 function layout(lines,w){ctx.font=font();let rows=[];for(const line of lines){let color=dialogueColor(line);let row=[],x=0;for(const seg of redactSegments(inlineActionSegments(line,color),line.redactStart))for(const word of seg.text.split(/(\s+)/)){let chunks=[word];if(ctx.measureText(word).width>w){chunks=[];let chunk='';for(const char of word){if(ctx.measureText(chunk+char).width>w&&chunk){chunks.push(chunk);chunk=''}chunk+=char}if(chunk)chunks.push(chunk)}for(const chunk of chunks){let width=ctx.measureText(chunk).width;if(x+width>w&&x){rows.push(row);row=[];x=0}row.push({text:chunk,color:seg.color,redacted:seg.redacted,x});x+=width}}rows.push(row)}return rows}
 function chatOrigin(){
  if(pos)return pos;
@@ -241,7 +261,7 @@ $('resetZoom').onclick=()=>{$('backgroundZoom').value=100;render();status('Backg
 
 // LAYER_ENGINE
 let layers=[],selectedLayerId=null,chatLayerId=null,imageLayerId=null,buildingLayers=false,layerCounter=0,pendingNewImage=false;
-const chatKeys=['textAnchor','textOffset','wrapWidth','character','text','timestamps','font','size','spacing','outline','padding','bold',...Object.keys(colors).filter(k=>k!=='bg')];
+const chatKeys=['censorMode','textAnchor','textOffset','wrapWidth','character','text','timestamps','font','size','spacing','outline','padding','bold',...Object.keys(colors).filter(k=>k!=='bg')];
 function uid(){return 'layer-'+Date.now().toString(36)+'-'+(++layerCounter)}
 function selectedLayer(){return layers.find(l=>l.id===selectedLayerId)}
 function chatLayer(){return layers.find(l=>l.id===chatLayerId&&l.type==='chat')}
