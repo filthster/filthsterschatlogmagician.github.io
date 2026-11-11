@@ -9,7 +9,7 @@ const sample=`[21:04:12] John Doe says: We got everyone? Good. Let's get to work
 const colors={inventoryHeader:['Inventory header','#00d000'],inventoryItem:['Inventory items','#ffff00'],shownItem:['Shown items','#56d64b'],scamPhone:['Scam phone messages','#eda841'],takenItem:['Taken item','#56d64b'],shout:['Shouts','#f1f1f1'],propertyCash:['Property transfers','#eda841'],factionHeading:['Faction heading','#00aaff'],factionMember:['Faction members','#939799'],infoNotice:['Info notices','#f1f1f1'],infoLabel:['[INFO] label','#00aaff'],command:['Info commands','#ffba00'],whisper:['Whispers','#ffba00'],carWhisper:['Car whispers','#fbf724'],phone:['Phone · other caller','#fbf724'],pm:['Private messages','#fbf724'],megaphone:['Megaphone','#fbf724'],advert:['Advertisements','#80e500'],transaction:['Item transfers','#56d64b'],speech:['Normal text','#c6c4c4'],action:['/me · /ame','#c2a3da'],lower:['[lower]','#5a5a5b'],low:['[low]','#939799'],death:['Death / failure','#f00000'],important:['Important info','#fbf724'],success:['Success','#56d64b'],warning:['Warning','#eda841'],information:['Information','#3896f3'],white:['Default white','#f1f1f1'],radio:['Radio · light','#ffec8b'],radioDark:['Radio · dark','#a19558'],department:['Department','#ccca15'],vessel:['Vessel traffic','#33c1c9'],alert:['[!] messages','#ff00bc'],ooc:['OOC','#a8b8d8'],bg:['Background','#15181e']};
 const palette=document.querySelector('.palette');palette.replaceChildren();
 for(const [id,[label,color]] of Object.entries(colors)){const l=document.createElement('label'),i=document.createElement('input');i.type='color';i.id=id;i.value=color;l.append(document.createTextNode(label),i);palette.append(l)}
-const ids=['wrapWidth','exportFormat','jpegQuality','jpegMatte','backgroundX','backgroundY','dragMode','backgroundZoom','character','text','timestamps','font','size','width','height','spacing','outline','padding','bold','transparent',...Object.keys(colors)];
+const ids=['textAnchor','textOffset','wrapWidth','exportFormat','jpegQuality','jpegMatte','backgroundX','backgroundY','dragMode','backgroundZoom','character','text','timestamps','font','size','width','height','spacing','outline','padding','bold','transparent',...Object.keys(colors)];
 let image=null,imageData=null,pos=null,hidden=new Set(),drawn=[],drag=null;
 let jpegPreviewTimer=null,jpegPreviewRevision=0,jpegPreviewURL=null,jpegPreviewBusy=false,draftTimer=null,renderFrame=null;
 const types=Object.keys(colors).filter(x=>x!=='bg');
@@ -17,7 +17,15 @@ for(const type of types){let l=document.createElement('label'),i=document.create
 function state(){return {...Object.fromEntries(ids.map(id=>[id,$(id).type==='checkbox'?$(id).checked:$(id).value])),paletteVersion:2}}
 function status(s){$('status').textContent=s}
 function load(s){for(const id of ids)if(s[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!s[id];else $(id).value=s[id]}}
+function rpFirstParts(text){
+ const clean=text.replace(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/,'');
+ const quoted=clean.match(/^\*(?!\*)\s*(.+?)\s+["“]([\s\S]+)["”]\s*$/);
+ if(quoted)return {action:quoted[1].trim().replace(/\*$/, '').trim(),speech:' '+quoted[2]};
+ return null;
+}
 function classify(text){
+ const openingAction=rpFirstParts(text);
+ if(openingAction){const tailType=classify(openingAction.speech.trim());return ['speech','low','lower','phone','shout','whisper','carWhisper'].includes(tailType)?tailType:'speech';}
 if(/^\|?-{2,}\s*.+?['’]s Items\b|^Money on hand\s*:/i.test(text))return 'inventoryHeader';
 if(/^\d+:\s+.+?\s+x\d+\b|^Total weight\s*:/i.test(text))return 'inventoryItem';
 if(/^[^:]+?\s+has shown you their\s+.+/i.test(text))return 'shownItem';
@@ -65,6 +73,8 @@ function dialogueColor(line){
 const base=$(line.type).value,name=$('character').value.trim().replace(/_/g,' ').replace(/\s+/g,' ').toLowerCase();
 if(!name||!['speech','low','lower','phone'].includes(line.type))return base;
 const clean=line.text.replace(/\{[0-9a-f]{6}\}/gi,'').replace(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/, '');
+const lead=rpFirstParts(clean);
+if(lead){const actor=lead.action.replace(/_/g,' ').replace(/\s+/g,' ').trim().toLowerCase();const own=actor===name||actor.startsWith(name+' ');return line.type==='phone'?own?$('white').value:base:line.type==='low'?own?$('speech').value:base:line.type==='lower'?own?$('low').value:base:own?$('white').value:base;}
 const match=clean.match(/^(.+?)\s+(?:says|shouts|whispers|asks|replies|yells)(?=\s|:|\[|\()/i);
 if(!match)return base;
 const own=match[1].replace(/_/g,' ').replace(/\s+/g,' ').trim().toLowerCase()===name;
@@ -105,6 +115,9 @@ function styledSegments(line,color){
  out.push({text:body.slice(last),color:$('white').value});return out;
 }
 function inlineActionSegments(line,color){
+ const leading=rpFirstParts(line.text);
+ if(leading){const out=[],stamp=line.text.match(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/);if(stamp)out.push({text:stamp[0],color});out.push(...segments('* '+leading.action,$('action').value));out.push(...inlineActionSegments({...line,text:leading.speech},color));return out;}
+
  if(!['speech','low','lower','phone','shout','whisper','carWhisper'].includes(line.type))return styledSegments(line,color);
  const re=/(?<!\*)\*([^*]+?)\*(?!\*)/g,out=[];let last=0,match;
  while((match=re.exec(line.text))){
@@ -125,11 +138,19 @@ function paintChatSegment(c,seg,x,y,size){
 }
 $('copyRedaction').onclick=async()=>{try{await navigator.clipboard.writeText('÷');status('Copied ÷ — wrap text in ÷…÷ to black it out.')}catch{const input=$('redactionSymbol');input.hidden=false;input.select();status('Select and copy the ÷ symbol.')}};
 function layout(lines,w){ctx.font=font();let rows=[];for(const line of lines){let color=dialogueColor(line);let row=[],x=0;for(const seg of redactSegments(inlineActionSegments(line,color),line.redactStart))for(const word of seg.text.split(/(\s+)/)){let chunks=[word];if(ctx.measureText(word).width>w){chunks=[];let chunk='';for(const char of word){if(ctx.measureText(chunk+char).width>w&&chunk){chunks.push(chunk);chunk=''}chunk+=char}if(chunk)chunks.push(chunk)}for(const chunk of chunks){let width=ctx.measureText(chunk).width;if(x+width>w&&x){rows.push(row);row=[];x=0}row.push({text:chunk,color:seg.color,redacted:seg.redacted,x});x+=width}}rows.push(row)}return rows}
-function render(){let w=Math.max(80,Math.min(6000,+$('width').value||1100)),pad=Math.max(0,+$('padding').value||0),size=+$('size').value,gap=Math.max(0,+$('spacing').value||0);let raw=$('text').value,redacting=false;let lines=raw?raw.split(/\r?\n/).map(line=>{const parsed=parse(line.replace(/\t/g,'    '));parsed.redactStart=redacting;if((line.match(/÷/g)||[]).length%2)redacting=!redacting;return parsed;}).filter(line=>!line.text.trim()||!hidden.has(line.type)):[];const wrap=Math.max(10,Math.min(100,+$('wrapWidth').value||100));drawn=layout(lines,Math.max(1,(w-pad*2)*wrap/100));$('wrapOutput').textContent=wrap+'%';let h=Math.max(80,pad*2+drawn.length*(size+gap));let fixedHeight=+$('height').value;canvas.width=w;canvas.height=fixedHeight?Math.max(80,Math.min(6000,fixedHeight)):image?Math.round(image.height*w/image.width):h;ctx.clearRect(0,0,canvas.width,canvas.height);if(image){let fit=Math.max(canvas.width/image.width,canvas.height/image.height);let zoom=Math.max(0.1,Math.min(5,(+$('backgroundZoom').value||100)/100));let iw=image.width*fit*zoom,ih=image.height*fit*zoom;ctx.drawImage(image,(canvas.width-iw)/2+(+$('backgroundX').value||0),(canvas.height-ih)/2+(+$('backgroundY').value||0),iw,ih);}else if(!$('transparent').checked){ctx.fillStyle=$('bg').value;ctx.fillRect(0,0,canvas.width,canvas.height)}ctx.font=font();ctx.textBaseline='top';ctx.lineJoin='round';let origin=pos||{x:pad,y:pad};ctx.lineWidth=+$('outline').value*2;ctx.strokeStyle='#000';drawn.forEach((row,i)=>row.forEach(seg=>{let x=origin.x+seg.x,y=origin.y+i*(size+gap);paintChatSegment(ctx,seg,x,y,size)}));$('count').textContent=lines.length+' lines';$('dimensions').textContent=canvas.width+' × '+canvas.height+' px';$('sizeout').textContent=size+' px';$('empty').hidden=lines.length>0||!!image;canvas.style.display=lines.length||image?'block':'none';saveDraft();updateChatOutline();queueJPEGPreview();}
+function chatOrigin(){
+ if(pos)return pos;
+ const size=+$('size').value,gap=+$('spacing').value||0;
+ const blockHeight=drawn.length?drawn.length*size+(drawn.length-1)*gap:0;
+ const offset=Math.max(0,+$('textOffset').value||0);
+ return {x:offset,y:$('textAnchor').value==='bottom'?Math.max(0,canvas.height-offset-blockHeight):offset};
+}
+function renderSingle(){let w=Math.max(80,Math.min(6000,+$('width').value||1100)),pad=Math.max(0,+$('padding').value||0),size=+$('size').value,gap=Math.max(0,+$('spacing').value||0);let raw=$('text').value,redacting=false;let lines=raw?raw.split(/\r?\n/).map(line=>{const parsed=parse(line.replace(/\t/g,'    '));parsed.redactStart=redacting;if((line.match(/÷/g)||[]).length%2)redacting=!redacting;return parsed;}).filter(line=>!line.text.trim()||!hidden.has(line.type)):[];const wrap=Math.max(10,Math.min(100,+$('wrapWidth').value||100));drawn=layout(lines,Math.max(1,(w-pad*2)*wrap/100));$('wrapOutput').textContent=wrap+'%';let h=Math.max(80,pad*2+drawn.length*(size+gap));let fixedHeight=+$('height').value;canvas.width=w;canvas.height=fixedHeight?Math.max(80,Math.min(6000,fixedHeight)):image?Math.round(image.height*w/image.width):h;ctx.clearRect(0,0,canvas.width,canvas.height);if(image){let fit=Math.max(canvas.width/image.width,canvas.height/image.height);let zoom=Math.max(0.1,Math.min(5,(+$('backgroundZoom').value||100)/100));let iw=image.width*fit*zoom,ih=image.height*fit*zoom;ctx.drawImage(image,(canvas.width-iw)/2+(+$('backgroundX').value||0),(canvas.height-ih)/2+(+$('backgroundY').value||0),iw,ih);}else if(!$('transparent').checked){ctx.fillStyle=$('bg').value;ctx.fillRect(0,0,canvas.width,canvas.height)}ctx.font=font();ctx.textBaseline='top';ctx.lineJoin='round';let origin=chatOrigin();ctx.lineWidth=+$('outline').value*2;ctx.strokeStyle='#000';drawn.forEach((row,i)=>row.forEach(seg=>{let x=origin.x+seg.x,y=origin.y+i*(size+gap);paintChatSegment(ctx,seg,x,y,size)}));$('count').textContent=lines.length+' lines';$('dimensions').textContent=canvas.width+' × '+canvas.height+' px';$('sizeout').textContent=size+' px';$('empty').hidden=lines.length>0||!!image;canvas.style.display=lines.length||image?'block':'none';if(!buildingLayers){saveDraft();updateChatOutline();queueJPEGPreview();}}
 function saveDraft(){clearTimeout(draftTimer);draftTimer=setTimeout(()=>{try{localStorage.setItem('chatlog-studio',JSON.stringify(state()))}catch{}},300)}
 function scheduleRender(){if(renderFrame!==null)return;renderFrame=requestAnimationFrame(()=>{renderFrame=null;render()})}
 ids.filter(id=>!['exportFormat','jpegQuality','jpegMatte'].includes(id)).forEach(id=>$(id).addEventListener('input',scheduleRender));
 $('jpegMatte').addEventListener('input',()=>{queueJPEGPreview();saveDraft()});
+for(const id of ['textAnchor','textOffset'])$(id).addEventListener('input',()=>{pos=null;scheduleRender()});
 $('preset800').onclick=()=>{$('width').value=800;$('height').value=600;$('scale').value='1';render();status('Canvas set to 800 × 600. Export at 1× for exactly this size.')};
 $('presetauto').onclick=()=>{$('height').value='';render()};
 $('example').onclick=()=>{$('text').value=sample;render()};
@@ -142,36 +163,16 @@ function exportCanvas(jpeg,preview=false){
  output.drawImage(canvas,0,0,out.width,out.height);return out;
 }
 function queueJPEGPreview(){
- const revision=++jpegPreviewRevision,preview=$('jpegPreview');
- clearTimeout(jpegPreviewTimer);
- if($('exportFormat').value!=='jpeg'||(!drawn.length&&!image)){
- preview.hidden=true;preview.removeAttribute('src');
- if(jpegPreviewURL){URL.revokeObjectURL(jpegPreviewURL);jpegPreviewURL=null}return;
- }
- jpegPreviewTimer=setTimeout(()=>{
- if(jpegPreviewBusy){queueJPEGPreview();return}
- jpegPreviewBusy=true;
- const out=exportCanvas(true,true),quality=jpegLevel($('jpegQuality').value);
- out.toBlob(blob=>{
- jpegPreviewBusy=false;
- if(!blob||revision!==jpegPreviewRevision)return;
- const url=URL.createObjectURL(blob),decoded=new Image();
- decoded.onload=()=>{
- if(revision!==jpegPreviewRevision){URL.revokeObjectURL(url);return}
- if(jpegPreviewURL)URL.revokeObjectURL(jpegPreviewURL);
- jpegPreviewURL=url;preview.src=url;preview.hidden=false;
- $('exportHint').textContent='JPEG · quality '+quality+'/12 · '+(blob.size/1024).toFixed(1)+' KB preview';
- };
- decoded.onerror=()=>URL.revokeObjectURL(url);decoded.src=url;
- },'image/jpeg',quality/12);
- },120);
+ clearTimeout(jpegPreviewTimer);++jpegPreviewRevision;
+ $('jpegPreview').hidden=true;$('jpegPreview').removeAttribute('src');
+ if(jpegPreviewURL){URL.revokeObjectURL(jpegPreviewURL);jpegPreviewURL=null}
 }
 $('scale').addEventListener('change',queueJPEGPreview);
 function jpegLevel(value){return Math.max(0,Math.min(12,Math.round(Number(value)||0)))}
 function exportUI(){
  const jpeg=$('exportFormat').value==='jpeg',q=jpegLevel($('jpegQuality').value);
  const tier=q<=4?'Low':q<=7?'Medium':q<=9?'High':'Maximum';
- $('jpegOptions').hidden=!jpeg;$('jpegSlider').value=q;$('qualityLabel').textContent=q+' · '+tier.toUpperCase();
+ $('jpegOptions').hidden=true;$('jpegMatteControl').hidden=!jpeg;$('exportChoice').value=jpeg?'jpeg-'+q:'png';$('jpegSlider').value=q;$('qualityLabel').textContent=q+' · '+tier.toUpperCase();
  $('jpegTier').value=q<=4?'4':q<=7?'7':q<=9?'9':'12';
  $('download').textContent=jpeg?'Export JPEG ↓':'Export PNG ↓';
  $('exportHint').textContent=jpeg?'JPEG · quality '+q+'/12 · '+tier:'Lossless PNG. No watermark.';
@@ -183,7 +184,7 @@ $('jpegQuality').addEventListener('change',()=>{$('jpegQuality').value=jpegLevel
 $('jpegSlider').oninput=e=>{$('jpegQuality').value=e.target.value;exportUI()};
 $('jpegTier').onchange=e=>{$('jpegQuality').value=e.target.value;exportUI()};
 $('download').onclick=()=>{
- if(!drawn.length&&!image)return status('Add some chat lines first.');
+ if(!sceneHasContent())return status('Add some chat lines first.');
  const jpeg=$('exportFormat').value==='jpeg',q=jpegLevel($('jpegQuality').value),out=exportCanvas(jpeg);
  out.toBlob(b=>{if(!b)return status('Export failed. Please try again.');download(b,'chatlog-'+Date.now()+(jpeg?'.jpg':'.png'));status(jpeg?'JPEG exported · quality '+q+'/12':'PNG exported')},jpeg?'image/jpeg':'image/png',jpeg?q/12:undefined);
 };
@@ -215,14 +216,14 @@ function updateChatOutline(){
  ctx.font=font();
  const width=drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+ctx.measureText(seg.text).width)),0);
  const size=+$('size').value,step=size+(+$('spacing').value||0),margin=6;
- const origin=pos||{x:+$('padding').value||0,y:+$('padding').value||0};
+ const origin=chatOrigin();
  box.style.left=((origin.x-margin)/canvas.width*100)+'%';
  box.style.top=((origin.y-margin)/canvas.height*100)+'%';
  box.style.width=((width+margin*2)/canvas.width*100)+'%';
  box.style.height=(((drawn.length-1)*step+size+margin*2)/canvas.height*100)+'%';
 }
 function hitChat(point){
- const origin=pos||{x:+$('padding').value||0,y:+$('padding').value||0};
+ const origin=chatOrigin();
  const size=+$('size').value,step=size+(+$('spacing').value||0),margin=5;
  ctx.font=font();
  return drawn.some((row,i)=>{
@@ -230,62 +231,150 @@ function hitChat(point){
  return width>0&&point.x>=origin.x-margin&&point.x<=origin.x+width+margin&&point.y>=origin.y+i*step-margin&&point.y<=origin.y+i*step+size+margin;
  });
 }
-function startBackgroundDrag(){
- clearTimeout(jpegPreviewTimer);++jpegPreviewRevision;$('jpegPreview').hidden=true;
- if(renderFrame!==null){cancelAnimationFrame(renderFrame);renderFrame=null}
- const bg=$('dragBackground'),chat=$('dragChat'),layer=$('backgroundDragLayer');
- const fit=Math.max(canvas.width/image.width,canvas.height/image.height)*(+$('backgroundZoom').value||100)/100;
- const iw=image.width*fit,ih=image.height*fit;
- bg.src=imageData;bg.style.width=(iw/canvas.width*100)+'%';bg.style.height=(ih/canvas.height*100)+'%';
- bg.style.left=(((canvas.width-iw)/2+drag.px)/canvas.width*100)+'%';
- bg.style.top=(((canvas.height-ih)/2+drag.py)/canvas.height*100)+'%';bg.style.transform='translate3d(0,0,0)';
- // Rasterize the stationary dialogue once. Pointer movement only transforms the image layer.
- const ratio=Math.min(1,1600/Math.max(canvas.width,canvas.height));
- chat.width=Math.round(canvas.width*ratio);chat.height=Math.round(canvas.height*ratio);
- const c=chat.getContext('2d');c.scale(ratio,ratio);c.font=font();c.textBaseline='top';c.lineJoin='round';c.lineWidth=+$('outline').value*2;c.strokeStyle='#000';
- const origin=pos||{x:+$('padding').value,y:+$('padding').value},step=+$('size').value+(+$('spacing').value||0);
- drawn.forEach((row,i)=>row.forEach(seg=>{const x=origin.x+seg.x,y=origin.y+i*step;paintChatSegment(c,seg,x,y,+$('size').value)}));
- layer.hidden=false;canvas.style.opacity='0';
-}
-function finishDrag(){
- if(!drag)return;
- const background=drag.mode==='background';
- if(background){$('backgroundX').value=Math.round(drag.nextX??drag.px);$('backgroundY').value=Math.round(drag.nextY??drag.py)}
- drag=null;canvas.style.cursor='grab';
- if(background){render();canvas.style.opacity='1';$('backgroundDragLayer').hidden=true}else updateChatOutline();
-}
-canvas.onpointerdown=e=>{
- $('stage').focus({preventScroll:true});if(e.button!==undefined&&e.button!==0)return;
- const r=canvas.getBoundingClientRect();let mode=$('dragMode').value;
- if(mode==='auto'){
- const point={x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height};
- mode=hitChat(point)?'text':'background';
- }
- if(mode==='background'&&!image)return;
- status(mode==='text'?'Moving chat text':'Moving background image');
- const p=mode==='background'?{x:+$('backgroundX').value||0,y:+$('backgroundY').value||0}:pos||{x:+$('padding').value,y:+$('padding').value};
- drag={mode,x:e.clientX,y:e.clientY,px:p.x,py:p.y,s:canvas.width/r.width};canvas.setPointerCapture(e.pointerId);canvas.style.cursor='grabbing';if(mode==='background')startBackgroundDrag();updateChatOutline();
-};
-canvas.onpointermove=e=>{
- if(!drag)return;
- const x=drag.px+(e.clientX-drag.x)*drag.s,y=drag.py+(e.clientY-drag.y)*drag.s;
- if(drag.mode==='background'){drag.nextX=x;drag.nextY=y;$('dragBackground').style.transform='translate3d('+((x-drag.px)/drag.s)+'px,'+((y-drag.py)/drag.s)+'px,0)';return;}
- else pos={x:Math.max(0,Math.min(canvas.width-30,x)),y:Math.max(0,Math.min(canvas.height-20,y))};
- scheduleRender();
-};
-canvas.onpointerup=canvas.onpointercancel=canvas.onlostpointercapture=finishDrag;
 $('resetBackground').onclick=()=>{$('backgroundX').value=0;$('backgroundY').value=0;render();status('Background centered')};
 
-$('stage').addEventListener('wheel',e=>{
- if(document.activeElement!==$('stage')||!image||!e.deltaY)return;
- e.preventDefault();
- const factor=Math.exp(-Math.max(-100,Math.min(100,e.deltaY))*0.0015);
- $('backgroundZoom').value=Math.max(10,Math.min(500,Math.round((+$('backgroundZoom').value||100)*factor)));
- render();status('Background zoom: '+$('backgroundZoom').value+'% · Canvas: '+canvas.width+' × '+canvas.height+' px');
-},{passive:false});
+$('stage').addEventListener('wheel',e=>handleLayerWheel(e),{passive:false});
 $('resetZoom').onclick=()=>{$('backgroundZoom').value=100;render();status('Background zoom reset to 100%')};
 
-try{const saved=JSON.parse(localStorage.getItem('chatlog-studio'));if(saved)load(saved);else $('text').value=sample}catch{$('text').value=sample}
-$('dragMode').value='auto';
-if($('text').value.replaceAll('Eugene Bassanti','John Doe').replaceAll('John Kaminsky','Jane Doe')===sample)$('text').value=sample;
-render();exportUI();
+// LAYER_ENGINE
+let layers=[],selectedLayerId=null,chatLayerId=null,imageLayerId=null,buildingLayers=false,layerCounter=0,pendingNewImage=false;
+const chatKeys=['textAnchor','textOffset','wrapWidth','character','text','timestamps','font','size','spacing','outline','padding','bold',...Object.keys(colors).filter(k=>k!=='bg')];
+function uid(){return 'layer-'+Date.now().toString(36)+'-'+(++layerCounter)}
+function selectedLayer(){return layers.find(l=>l.id===selectedLayerId)}
+function chatLayer(){return layers.find(l=>l.id===chatLayerId&&l.type==='chat')}
+function imageLayer(){return layers.find(l=>l.id===imageLayerId&&l.type==='image')}
+function chatSettings(){const s=state();return Object.fromEntries(chatKeys.map(k=>[k,s[k]]))}
+function syncLayers(){
+ const chat=chatLayer();if(chat){chat.settings=chatSettings();chat.pos=pos?{...pos}:null;chat.hidden=[...hidden]}
+ const img=imageLayer();if(img){img.x=+$('backgroundX').value||0;img.y=+$('backgroundY').value||0;img.zoom=+$('backgroundZoom').value||100;}
+}
+function serializeLayers(includeImages=true){syncLayers();return {version:2,settings:state(),selectedLayerId,chatLayerId,imageLayerId,layers:layers.map(l=>l.type==='chat'?{id:l.id,type:l.type,name:l.name,visible:l.visible,opacity:l.opacity,settings:l.settings,pos:l.pos,hidden:l.hidden}:{id:l.id,type:l.type,name:l.name,visible:l.visible,opacity:l.opacity,x:l.x,y:l.y,zoom:l.zoom,data:includeImages?l.data:null})}}
+function sceneHasContent(){return layers.some(l=>l.visible&&(l.type==='image'?!!l.img:!!l.settings.text.trim()))}
+function selectLayer(id,save=true){
+ if(save)syncLayers();const layer=layers.find(l=>l.id===id);if(!layer)return;selectedLayerId=id;
+ if(layer.type==='chat'){chatLayerId=id;load(layer.settings);pos=layer.pos?{...layer.pos}:null;hidden=new Set(layer.hidden||[]);[...$('filters').querySelectorAll('input')].forEach((input,i)=>input.checked=!hidden.has(types[i]));}
+ else{imageLayerId=id;image=layer.img;imageData=layer.data;$('backgroundX').value=layer.x||0;$('backgroundY').value=layer.y||0;$('backgroundZoom').value=layer.zoom||100;}
+ for(const key of chatKeys)$(key).disabled=layer.type!=='chat';
+ $('text').disabled=false;$('text').readOnly=layer.type!=='chat';
+ for(const key of ['backgroundX','backgroundY','backgroundZoom','resetZoom','resetBackground'])$(key).disabled=layer.type!=='image';
+ $('layerName').value=layer.name;$('layerOpacity').value=layer.opacity??100;$('opacityOutput').textContent=(layer.opacity??100)+'%';
+ $('layerHint').textContent=layer.type==='chat'?'Editing this chat layer. Use the text and style controls below.':'Editing this image layer. Drag it, or use position and zoom controls below.';
+ updateLayerList();render();
+}
+function updateLayerList(){
+ const list=$('layerList');list.replaceChildren();
+ [...layers].reverse().forEach(layer=>{const row=document.createElement('div');row.className='layer-row'+(layer.id===selectedLayerId?' selected':'');
+ const eye=document.createElement('button');eye.className='visibility';eye.textContent=layer.visible?'Show':'Hidden';eye.setAttribute('aria-label',(layer.visible?'Hide ':'Show ')+layer.name);eye.onclick=()=>{layer.visible=!layer.visible;updateLayerList();render()};
+ const select=document.createElement('button');select.className='layer-select';select.textContent=(layer.type==='chat'?'T · ':'▧ · ')+layer.name;select.setAttribute('aria-pressed',String(layer.id===selectedLayerId));select.onclick=()=>selectLayer(layer.id);
+ row.append(eye,select);list.append(row);
+ });
+ const layer=selectedLayer(),i=layers.indexOf(layer);$('layerUp').disabled=i<0||i===layers.length-1;$('layerDown').disabled=i<=0;
+}
+function newChat(){syncLayers();const settings=chatSettings();settings.text='John Doe says: Write your scene here.';const layer={id:uid(),type:'chat',name:'Chat '+(layers.filter(l=>l.type==='chat').length+1),visible:true,opacity:100,settings,pos:null,hidden:[]};layers.push(layer);selectLayer(layer.id,false)}
+function removeLayer(id=selectedLayerId){
+ syncLayers();const removed=layers.find(l=>l.id===id);if(!removed)return;layers=layers.filter(l=>l.id!==id);
+ if(removed.type==='chat'&&chatLayerId===id){chatLayerId=null;pos=null;drawn=[];const other=layers.find(l=>l.type==='chat');if(other){chatLayerId=other.id;load(other.settings);pos=other.pos||null;hidden=new Set(other.hidden||[])}}
+ if(removed.type==='image'&&imageLayerId===id){imageLayerId=null;image=null;imageData=null;const other=layers.find(l=>l.type==='image');if(other){imageLayerId=other.id;image=other.img;imageData=other.data;$('backgroundX').value=other.x;$('backgroundY').value=other.y;$('backgroundZoom').value=other.zoom}}
+ if(!layers.length){newChat();return}selectLayer(layers.at(-1).id,false);status('Layer removed');
+}
+function moveLayer(direction){syncLayers();const index=layers.findIndex(l=>l.id===selectedLayerId),target=index+direction;if(target<0||target>=layers.length)return;[layers[index],layers[target]]=[layers[target],layers[index]];updateLayerList();render()}
+function imageBounds(layer,w=canvas.width,h=canvas.height){const scale=Math.max(w/layer.img.width,h/layer.img.height)*(layer.zoom||100)/100;const width=layer.img.width*scale,height=layer.img.height*scale;return {x:(w-width)/2+(layer.x||0),y:(h-height)/2+(layer.y||0),width,height}}
+function paintLayer(c,layer){if(!layer.visible)return;c.save();c.globalAlpha=(layer.opacity??100)/100;if(layer.type==='image'&&layer.img){const b=imageBounds(layer);c.drawImage(layer.img,b.x,b.y,b.width,b.height)}else if(layer.cache)c.drawImage(layer.cache,0,0);c.restore()}
+function render(){
+ if(buildingLayers)return;syncLayers();buildingLayers=true;
+ const original=state(),originalPos=pos,originalHidden=hidden,originalImage=image,originalImageData=imageData;
+ let w=Math.max(80,Math.min(6000,+$('width').value||1100)),h=+$('height').value;
+ if(!h){if(originalImage)h=Math.round(originalImage.height*w/originalImage.width);else{renderSingle();h=canvas.height}}
+ h=Math.max(80,Math.min(6000,h));
+ let selectedRows=[];
+ for(const layer of layers){if(layer.type!=='chat')continue;
+ const key=JSON.stringify([layer.settings,layer.pos,layer.hidden,w,h]);
+ if(layer.cacheKey!==key){load(layer.settings);$('width').value=w;$('height').value=h;pos=layer.pos||null;hidden=new Set(layer.hidden||[]);image=null;imageData=null;$('transparent').checked=true;renderSingle();
+ layer.rows=drawn;layer.cache=document.createElement('canvas');layer.cache.width=w;layer.cache.height=h;layer.cache.getContext('2d').drawImage(canvas,0,0);
+ // Text layers must remain transparent, independently of the canvas background.
+ layer.cacheKey=key;layer.origin=chatOrigin();ctx.font=font();layer.bounds={x:layer.origin.x,y:layer.origin.y,width:drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+ctx.measureText(seg.text).width)),0),height:drawn.length?(drawn.length-1)*(+$('size').value+(+$('spacing').value||0))+(+$('size').value):0};
+ }
+ if(layer.id===chatLayerId)selectedRows=layer.rows||[];
+ }
+ load(original);pos=originalPos;hidden=originalHidden;image=originalImage;imageData=originalImageData;drawn=selectedRows;
+ canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);if(!$('transparent').checked){ctx.fillStyle=$('bg').value;ctx.fillRect(0,0,w,h)}
+ for(const layer of layers)paintLayer(ctx,layer);
+ $('count').textContent=(chatLayer()?.settings.text.split(/\r?\n/).length||0)+' lines · '+layers.length+' layers';$('dimensions').textContent=w+' × '+h+' px';$('sizeout').textContent=$('size').value+' px';$('wrapOutput').textContent=$('wrapWidth').value+'%';$('empty').hidden=sceneHasContent();canvas.style.display=sceneHasContent()?'block':'none';
+ buildingLayers=false;saveDraft();updateChatOutline();queueJPEGPreview();
+}
+function saveDraft(){clearTimeout(draftTimer);draftTimer=setTimeout(()=>{try{localStorage.setItem('chatlog-studio',JSON.stringify(serializeLayers(false)))}catch{}},400)}
+function decodeImage(data){return new Promise((resolve,reject)=>{if(typeof data!=='string'||!/^data:image\//.test(data))return reject(Error('Invalid image data'));const img=new Image();img.onload=()=>img.width<=6000&&img.height<=6000?resolve(img):reject(Error('Use images up to 6000 × 6000 pixels.'));img.onerror=()=>reject(Error('Could not read image.'));img.src=data})}
+async function importScreenshot(file){
+ if(!file||!file.type.startsWith('image/'))return status('Choose an image file.');
+ try{const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file)}),img=await decodeImage(data);syncLayers();
+ const layer={id:uid(),type:'image',name:file.name,visible:true,opacity:100,img,data,x:0,y:0,zoom:100};
+ // Background images begin below chat layers; ordering can be changed in the panel.
+ const firstChat=layers.findIndex(l=>l.type==='chat');layers.splice(firstChat<0?layers.length:firstChat,0,layer);selectLayer(layer.id,false);status('Image layer added. Canvas dimensions unchanged.');
+ }catch(err){status(err.message||'Could not open image.')}
+}
+async function openLayerProject(p){
+ if(!p||![1,2].includes(p.version)||!p.settings)throw Error('Choose an editor project file.');
+ // Decode everything before replacing the current scene.
+ const incoming=[];
+ if(p.version===2){if(!Array.isArray(p.layers)||p.layers.length>100)throw Error('Invalid layer list.');for(const raw of p.layers){if(!['chat','image'].includes(raw.type))continue;const layer={...raw,id:uid(),visible:raw.visible!==false,opacity:Math.max(0,Math.min(100,Number(raw.opacity??100)))};layer.oldId=raw.id;if(layer.type==='image'){if(!raw.data)continue;layer.img=await decodeImage(raw.data)}else{layer.settings={...chatSettings(),...raw.settings};layer.hidden=raw.hidden||[];}incoming.push(layer)}}
+ else{if(p.image)incoming.push({id:uid(),type:'image',name:'Background',visible:true,opacity:100,data:p.image,img:await decodeImage(p.image),x:+p.settings.backgroundX||0,y:+p.settings.backgroundY||0,zoom:+p.settings.backgroundZoom||100});incoming.push({id:uid(),type:'chat',name:'Chat 1',visible:true,opacity:100,settings:{...chatSettings(),...p.settings},pos:p.pos||null,hidden:p.hidden||[]})}
+ load(p.settings);layers=incoming;chatLayerId=null;imageLayerId=null;image=null;imageData=null;pos=null;hidden=new Set();
+ const chat=layers.find(l=>l.type==='chat');if(chat){chatLayerId=chat.id;load(chat.settings);pos=chat.pos||null;hidden=new Set(chat.hidden||[])}
+ const img=layers.find(l=>l.type==='image');if(img){imageLayerId=img.id;image=img.img;imageData=img.data;$('backgroundX').value=img.x;$('backgroundY').value=img.y;$('backgroundZoom').value=img.zoom}
+ if(!layers.length)newChat();else selectLayer((layers.find(l=>l.oldId===p.selectedLayerId)||chat||layers.at(-1)).id,false);exportUI();
+}
+$('save').onclick=()=>{download(new Blob([JSON.stringify(serializeLayers(true))],{type:'application/json'}),'filthlines-project.json');status('All layers saved. This file includes original images and unredacted text.')};
+$('project').onchange=async e=>{try{const p=JSON.parse(await e.target.files[0].text());await openLayerProject(p);status('Layered project opened')}catch(err){status(err.message)}e.target.value=''};
+$('addChatLayer').onclick=newChat;$('addImageLayer').onclick=()=>$('image').click();
+$('layerName').oninput=()=>{const layer=selectedLayer();if(layer){layer.name=$('layerName').value;updateLayerList();saveDraft()}};
+$('layerOpacity').oninput=()=>{const layer=selectedLayer();if(layer){layer.opacity=+$('layerOpacity').value;$('opacityOutput').textContent=layer.opacity+'%';scheduleRender()}};
+$('layerUp').onclick=()=>moveLayer(1);$('layerDown').onclick=()=>moveLayer(-1);$('deleteLayer').onclick=()=>removeLayer();
+$('duplicateLayer').onclick=()=>{syncLayers();const layer=selectedLayer();if(!layer)return;const copy={...layer,id:uid(),name:layer.name+' copy',cache:null,cacheKey:null};if(layer.type==='chat'){copy.settings={...layer.settings};copy.hidden=[...layer.hidden];copy.pos={x:(layer.pos||layer.origin||{x:28}).x+15,y:(layer.pos||layer.origin||{y:28}).y+15}}else{copy.x+=15;copy.y+=15}layers.splice(layers.indexOf(layer)+1,0,copy);selectLayer(copy.id,false)};
+$('remove').onclick=()=>{if(imageLayer())removeLayer(imageLayerId);else status('Select an image layer to remove.')};
+function hitLayer(layer,p){if(!layer.visible||layer.opacity===0)return false;const b=layer.type==='image'?imageBounds(layer):layer.bounds;return b&&p.x>=b.x-4&&p.y>=b.y-4&&p.x<=b.x+b.width+4&&p.y<=b.y+b.height+4}
+function updateChatOutline(){const box=$('chatDragOutline'),layer=selectedLayer();box.hidden=!(drag&&layer?.type==='chat');if(box.hidden)return;const b=layer.bounds;box.style.left=(b.x-6)/canvas.width*100+'%';box.style.top=(b.y-6)/canvas.height*100+'%';box.style.width=(b.width+12)/canvas.width*100+'%';box.style.height=(b.height+12)/canvas.height*100+'%';}
+function beginLayerDrag(){
+ clearTimeout(jpegPreviewTimer);++jpegPreviewRevision;$('jpegPreview').hidden=true;
+ const layer=selectedLayer(),index=layers.indexOf(layer),ratio=Math.min(1,1600/Math.max(canvas.width,canvas.height));
+ for(const [id,group]of [['dragBelow',layers.slice(0,index)],['dragMoving',[layer]],['dragAbove',layers.slice(index+1)]]){const out=$(id);out.width=Math.round(canvas.width*ratio);out.height=Math.round(canvas.height*ratio);out.style.transform='none';const c=out.getContext('2d');c.scale(ratio,ratio);if(id==='dragBelow'&&!$('transparent').checked){c.fillStyle=$('bg').value;c.fillRect(0,0,canvas.width,canvas.height)}group.forEach(l=>paintLayer(c,l));}
+ $('backgroundDragLayer').hidden=false;canvas.style.opacity='0';updateChatOutline();
+}
+canvas.onpointerdown=e=>{
+ if(e.button!==0)return;if(renderFrame!==null){cancelAnimationFrame(renderFrame);renderFrame=null;render()}
+ const r=canvas.getBoundingClientRect(),p={x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height},mode=$('dragMode').value;
+ let target;
+ if(mode==='auto'){target=[...layers].reverse().find(l=>hitLayer(l,p));}
+ else{const type=mode==='text'?'chat':'image';target=[...layers].reverse().find(l=>l.type===type&&hitLayer(l,p));}
+ if(!target)return;selectLayer(target.id);$('stage').focus({preventScroll:true});
+ const origin=target.type==='image'?{x:target.x,y:target.y}:target.pos||target.origin;
+ drag={id:target.id,mode:target.type==='chat'?'text':'background',x:e.clientX,y:e.clientY,px:origin.x,py:origin.y,s:canvas.width/r.width};canvas.setPointerCapture(e.pointerId);beginLayerDrag();
+};
+canvas.onpointermove=e=>{if(!drag)return;drag.dx=(e.clientX-drag.x)*drag.s;drag.dy=(e.clientY-drag.y)*drag.s;const transform='translate3d('+(drag.dx/drag.s)+'px,'+(drag.dy/drag.s)+'px,0)';$('dragMoving').style.transform=transform;if(drag.mode==='text')$('chatDragOutline').style.transform=transform;};
+function finishLayerDrag(){if(!drag)return;const layer=layers.find(l=>l.id===drag.id);if(layer){if(layer.type==='image'){$('backgroundX').value=Math.round(drag.px+(drag.dx||0));$('backgroundY').value=Math.round(drag.py+(drag.dy||0))}else pos={x:Math.round(drag.px+(drag.dx||0)),y:Math.round(drag.py+(drag.dy||0))};}drag=null;render();canvas.style.opacity='1';$('backgroundDragLayer').hidden=true;$('chatDragOutline').style.transform='none';updateChatOutline();}
+canvas.onpointerup=canvas.onpointercancel=canvas.onlostpointercapture=finishLayerDrag;
+function handleLayerWheel(e){if(document.activeElement!==$('stage')||!e.deltaY)return;const layer=selectedLayer();if(layer?.type!=='image')return;e.preventDefault();$('backgroundZoom').value=Math.max(10,Math.min(500,Math.round((+$('backgroundZoom').value||100)*Math.exp(-Math.max(-100,Math.min(100,e.deltaY))*.0015))));scheduleRender();}
+(async()=>{try{const saved=JSON.parse(localStorage.getItem('chatlog-studio'));if(saved?.version===2){await openLayerProject(saved);status('Draft restored. Re-add image layers from files, or open a saved project.');return}if(saved)load(saved);else $('text').value=sample;}catch{$('text').value=sample}
+ const initial={id:uid(),type:'chat',name:'Chat 1',visible:true,opacity:100,settings:chatSettings(),pos:null,hidden:[]};layers=[initial];chatLayerId=initial.id;selectLayer(initial.id,false);exportUI();})();
+
+$('text').addEventListener('pointerdown',()=>{
+ if(selectedLayer()?.type==='chat')return;
+ const chat=chatLayer()||layers.find(layer=>layer.type==='chat');
+ if(chat)selectLayer(chat.id);else newChat();
+ $('text').readOnly=false;
+});
+$('text').addEventListener('focus',()=>{
+ if(selectedLayer()?.type==='chat')return;
+ const chat=chatLayer()||layers.find(layer=>layer.type==='chat');
+ if(chat)selectLayer(chat.id);else newChat();
+ $('text').readOnly=false;
+});
+$('exportChoice').onchange=()=>{
+ const value=$('exportChoice').value;
+ $('exportFormat').value=value==='png'?'png':'jpeg';
+ if(value!=='png')$('jpegQuality').value=value.slice(5);
+ exportUI();
+};
+function updateSquareSliders(){document.querySelectorAll('input[type=range]').forEach(input=>{const min=Number(input.min)||0,max=Number(input.max)||100,value=Number(input.value);input.style.setProperty('--fill',((value-min)/(max-min)*100)+'%')})}
+document.addEventListener('input',updateSquareSliders);
+new MutationObserver(updateSquareSliders).observe($('opacityOutput'),{childList:true});
+updateSquareSliders();
