@@ -1,1 +1,1 @@
-Upload the extracted files to your GitHub Pages repository root. SAMP font retains the approved dense rendering. Old SAMP Bitmap project settings migrate to SAMP. The obsolete samp-bitmap.js may be deleted.
+Upload the extracted website files to your GitHub Pages repository root. SAMP font applies a subtle display-only color reduction. Other fonts and saved palette values remain unchanged.

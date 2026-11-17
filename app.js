@@ -177,7 +177,12 @@ function paintLineBackdrop(c,row,x,y,size){
  if(!width)return;
  c.save();c.fillStyle='#000';c.fillRect(Math.floor(x)-3,Math.floor(y)-1,Math.ceil(width)+6,Math.ceil(size)+3);c.restore();
 }
+function sampDisplayColor(color){
+ if($('font').value!=='SAMP'||!/^#[0-9a-f]{6}$/i.test(color))return color;
+ return '#'+color.slice(1).match(/../g).map(part=>Math.round(parseInt(part,16)*0.94).toString(16).padStart(2,'0')).join('');
+}
 function paintChatSegment(c,seg,x,y,size){
+ seg={...seg,color:sampDisplayColor(seg.color)};
  if(seg.redacted){
   const mode=$('censorMode').value,w=chatTextWidth(c,seg.text),h=size+3;
   if(mode==='invisible')return;
