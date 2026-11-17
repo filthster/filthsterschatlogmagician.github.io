@@ -1,1 +1,1 @@
-Upload extracted files to your GitHub Pages repository root. SAMP font uses bold Arial.
+Upload the extracted files to your GitHub Pages repository root. SAMP font retains the approved dense rendering. Old SAMP Bitmap project settings migrate to SAMP. The obsolete samp-bitmap.js may be deleted.

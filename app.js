@@ -16,7 +16,7 @@ const types=Object.keys(colors).filter(x=>x!=='bg');
 for(const type of types){let l=document.createElement('label'),i=document.createElement('input');i.type='checkbox';i.checked=true;i.addEventListener('change',()=>{i.checked?hidden.delete(type):hidden.add(type);render()});l.append(i,document.createTextNode(colors[type][0]));$('filters').append(l)}
 function state(){return {...Object.fromEntries(ids.map(id=>[id,$(id).type==='checkbox'?$(id).checked:$(id).value])),paletteVersion:2}}
 function status(s){$('status').textContent=s}
-function load(s){$('textBackdrop').checked=!!s.textBackdrop;$('phonePartner').value=s.phonePartner||'';$('censorMode').value=s.censorMode||'black';for(const id of ids)if(s[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!s[id];else $(id).value=s[id]}}
+function load(s){s={...s,font:s.font==='SAMPBitmap'?'SAMP':s.font};$('textBackdrop').checked=!!s.textBackdrop;$('phonePartner').value=s.phonePartner||'';$('censorMode').value=s.censorMode||'black';for(const id of ids)if(s[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!s[id];else $(id).value=s[id]}}
 function rpFirstParts(text){
  const clean=text.replace(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/,'');
  const quoted=clean.match(/^\*(?!\*)\s*(.+?)\s+["“]([\s\S]+)["”]\s*$/);
@@ -75,7 +75,7 @@ return 'speech';
 }
 function parse(line){let stamp=line.match(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/)?.[0]||'';let text=line.slice(stamp.length).replace(/^\[CHAT\]\s*/,'');let type=classify(text);text=text.replace(/^\/(?:a?me|do)\s+/i,'* ').replace(/^\/b\s+(.+)$/i,'(( $1 ))');return {text:($('timestamps').checked?stamp:'')+text,type}}
 function textSize(){return +$('size').value}
-function font(){const samp=$('font').value==='SAMP';return (samp||$('bold').checked?'bold ':'')+textSize()+'px '+(samp?'Arial':$('font').value)}
+function font(){const choice=$('font').value,samp=choice==='SAMP',calibri=choice==='Calibri';return (samp||calibri||$('bold').checked?'bold ':'')+textSize()+'px '+(samp?'Arial':calibri?'"Calibri", Arial, sans-serif':choice)}
 function lineGap(){return Math.max(0,+$('spacing').value||0)}
 function outlineWidth(){return +$('outline').value*2}
 function segments(text,color){let parts=[],re=/\{([0-9a-fA-F]{6})\}/g,last=0,m;while((m=re.exec(text))){parts.push({text:text.slice(last,m.index),color});color='#'+m[1];last=re.lastIndex}parts.push({text:text.slice(last),color});return parts}
@@ -154,21 +154,22 @@ function redactSegments(parts,initial=false){
 const sampGlyphCache=new Map();
 function chatTextWidth(c,text){return c.measureText(text).width}
 function paintSampText(c,seg,x,y,size){
- const edge=c.lineWidth?Math.max(1,Math.round(c.lineWidth/2)):0,pad=edge+2,key=JSON.stringify([c.font,seg.text,seg.color,edge]);
+ const edge=c.lineWidth?Math.max(1,Math.round(c.lineWidth/2)):0,pad=edge+2,key=JSON.stringify([c.font,seg.text,seg.color,edge,$('font').value]);
  let glyph=sampGlyphCache.get(key);
  if(!glyph){
   const mask=document.createElement('canvas');mask.width=Math.max(1,Math.ceil(c.measureText(seg.text).width)+pad*2);mask.height=Math.ceil(size*1.6)+pad*2;
   const m=mask.getContext('2d');m.font=c.font;m.textBaseline='top';m.fillStyle='#fff';m.fillText(seg.text,pad,pad);
   const pixels=m.getImageData(0,0,mask.width,mask.height);
-  for(let i=3;i<pixels.data.length;i+=4)pixels.data[i]=sampEdgeAlpha(pixels.data[i]);
+  for(let i=3;i<pixels.data.length;i+=4){const alpha=sampEdgeAlpha(pixels.data[i]);pixels.data[i]=$('font').value==='SAMP'?sampHeavyAlpha(alpha):alpha;}
   m.putImageData(pixels,0,0);
   glyph=document.createElement('canvas');glyph.width=mask.width;glyph.height=mask.height;const g=glyph.getContext('2d');
-  if(edge){for(let dy=-edge;dy<=edge;dy++)for(let dx=-edge;dx<=edge;dx++)g.drawImage(mask,dx,dy);g.globalCompositeOperation='source-in';g.fillStyle='#000';g.fillRect(0,0,glyph.width,glyph.height);g.globalCompositeOperation='source-over';}
+  if(edge){for(let dy=-edge;dy<=edge;dy++)for(let dx=-edge;dx<=edge;dx++)if(Math.abs(dx)+Math.abs(dy)<=edge)g.drawImage(mask,dx,dy);g.globalCompositeOperation='source-in';g.fillStyle='#000';g.fillRect(0,0,glyph.width,glyph.height);g.globalCompositeOperation='source-over';}
   m.globalCompositeOperation='source-in';m.fillStyle=seg.color;m.fillRect(0,0,mask.width,mask.height);g.drawImage(mask,0,0);
   if(sampGlyphCache.size>=1500)sampGlyphCache.clear();sampGlyphCache.set(key,glyph);
  }
  c.save();c.drawImage(glyph,Math.round(x)-pad,Math.round(y)-pad);c.restore();
 }
+function sampHeavyAlpha(alpha){return alpha===0?0:Math.round(255*Math.pow(alpha/255,0.48))}
 function sampEdgeAlpha(alpha){return Math.round(Math.max(0,Math.min(1,(alpha-25)/210))*255)}
 function paintLineBackdrop(c,row,x,y,size){
  if(!row.length)return;
@@ -178,7 +179,7 @@ function paintLineBackdrop(c,row,x,y,size){
 }
 function paintChatSegment(c,seg,x,y,size){
  if(seg.redacted){
-  const mode=$('censorMode').value,w=c.measureText(seg.text).width,h=size+3;
+  const mode=$('censorMode').value,w=chatTextWidth(c,seg.text),h=size+3;
   if(mode==='invisible')return;
   c.save();
   if(mode==='mosaic'){
@@ -441,5 +442,5 @@ document.addEventListener('input',updateSquareSliders);
 new MutationObserver(updateSquareSliders).observe($('opacityOutput'),{childList:true});
 updateSquareSliders();
 
-function applySampReference(){ $('font').value='SAMP';$('size').value=10;$('spacing').value=4;$('outline').value=1;$('bold').checked=true;sampGlyphCache.clear();render();status('SAMP reference: 10px bold Arial, 4px line gap, 1px outline.');}
+function applySampReference(){ $('font').value='SAMP';$('size').value=11.5;$('spacing').value=2.5;$('outline').value=1;$('bold').checked=true;sampGlyphCache.clear();render();status('SAMP reference: 11.5px heavy Arial, 14px line step, thin outline.');}
 $('sampReference').onclick=applySampReference;
