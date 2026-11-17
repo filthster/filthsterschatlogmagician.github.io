@@ -74,10 +74,10 @@ if(/\(\d+(?:\.\d+)?\s*g\)\s*$/i.test(text))return 'inventoryItem';
 return 'speech';
 }
 function parse(line){let stamp=line.match(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/)?.[0]||'';let text=line.slice(stamp.length).replace(/^\[CHAT\]\s*/,'');let type=classify(text);text=text.replace(/^\/(?:a?me|do)\s+/i,'* ').replace(/^\/b\s+(.+)$/i,'(( $1 ))');return {text:($('timestamps').checked?stamp:'')+text,type}}
-function textSize(){const size=+$('size').value;return $('font').value==='SAMP'?Math.max(1,Math.round(size*(2/3))):size}
-function font(){const samp=$('font').value==='SAMP';return (samp||$('bold').checked?'bold ':'')+(textSize())+'px '+(samp?'Arial':$('font').value)}
-function lineGap(){const gap=Math.max(0,+$('spacing').value||0);return $('font').value==='SAMP'?Math.round(gap*(2/3)):gap}
-function outlineWidth(){const width=+$('outline').value*2;return $('font').value==='SAMP'?width/2:width}
+function textSize(){return +$('size').value}
+function font(){const samp=$('font').value==='SAMP';return (samp||$('bold').checked?'bold ':'')+textSize()+'px '+(samp?'Arial':$('font').value)}
+function lineGap(){return Math.max(0,+$('spacing').value||0)}
+function outlineWidth(){return +$('outline').value*2}
 function segments(text,color){let parts=[],re=/\{([0-9a-fA-F]{6})\}/g,last=0,m;while((m=re.exec(text))){parts.push({text:text.slice(last,m.index),color});color='#'+m[1];last=re.lastIndex}parts.push({text:text.slice(last),color});return parts}
 function dialogueColor(line){
 const base=$(line.type).value,name=$('character').value.trim().replace(/_/g,' ').replace(/\s+/g,' ').toLowerCase();
@@ -152,6 +152,7 @@ function redactSegments(parts,initial=false){
  return out;
 }
 const sampGlyphCache=new Map();
+function chatTextWidth(c,text){return c.measureText(text).width}
 function paintSampText(c,seg,x,y,size){
  const edge=c.lineWidth?Math.max(1,Math.round(c.lineWidth/2)):0,pad=edge+2,key=JSON.stringify([c.font,seg.text,seg.color,edge]);
  let glyph=sampGlyphCache.get(key);
@@ -168,10 +169,10 @@ function paintSampText(c,seg,x,y,size){
  }
  c.save();c.drawImage(glyph,Math.round(x)-pad,Math.round(y)-pad);c.restore();
 }
-function sampEdgeAlpha(alpha){return Math.round(Math.max(0,Math.min(1,(alpha-45)/180))*255)}
+function sampEdgeAlpha(alpha){return Math.round(Math.max(0,Math.min(1,(alpha-25)/210))*255)}
 function paintLineBackdrop(c,row,x,y,size){
  if(!row.length)return;
- const width=Math.max(...row.map(seg=>seg.x+c.measureText(seg.text).width));
+ const width=Math.max(...row.map(seg=>seg.x+chatTextWidth(c,seg.text)));
  if(!width)return;
  c.save();c.fillStyle='#000';c.fillRect(Math.floor(x)-3,Math.floor(y)-1,Math.ceil(width)+6,Math.ceil(size)+3);c.restore();
 }
@@ -198,7 +199,7 @@ function paintChatSegment(c,seg,x,y,size){
  if(c.lineWidth)c.strokeText(seg.text,x,y);c.fillStyle=seg.color;c.fillText(seg.text,x,y);
 }
 $('copyRedaction').onclick=async()=>{try{await navigator.clipboard.writeText('÷');status('Copied ÷ — wrap text in ÷…÷ to apply the selected censor style.')}catch{const input=$('redactionSymbol');input.hidden=false;input.select();status('Select and copy the ÷ symbol.')}};
-function layout(lines,w){ctx.font=font();let rows=[];for(const line of lines){let color=dialogueColor(line);let row=[],x=0;for(const seg of redactSegments(inlineActionSegments(line,color),line.redactStart))for(const word of seg.text.split(/(\s+)/)){let chunks=[word];if(ctx.measureText(word).width>w){chunks=[];let chunk='';for(const char of word){if(ctx.measureText(chunk+char).width>w&&chunk){chunks.push(chunk);chunk=''}chunk+=char}if(chunk)chunks.push(chunk)}for(const chunk of chunks){let width=ctx.measureText(chunk).width;if(x+width>w&&x){rows.push(row);row=[];x=0}row.push({text:chunk,color:seg.color,redacted:seg.redacted,x});x+=width}}rows.push(row)}return rows}
+function layout(lines,w){ctx.font=font();let rows=[];for(const line of lines){let color=dialogueColor(line);let row=[],x=0;for(const seg of redactSegments(inlineActionSegments(line,color),line.redactStart))for(const word of seg.text.split(/(\s+)/)){let chunks=[word];if(chatTextWidth(ctx,word)>w){chunks=[];let chunk='';for(const char of word){if(chatTextWidth(ctx,chunk+char)>w&&chunk){chunks.push(chunk);chunk=''}chunk+=char}if(chunk)chunks.push(chunk)}for(const chunk of chunks){let width=chatTextWidth(ctx,chunk);if(x+width>w&&x){rows.push(row);row=[];x=0}row.push({text:chunk,color:seg.color,redacted:seg.redacted,x});x+=width}}rows.push(row)}return rows}
 function chatOrigin(){
  if(pos)return pos;
  const size=textSize(),gap=lineGap();
@@ -275,7 +276,7 @@ function updateChatOutline(){
  box.hidden=!(drag&&drag.mode==='text'&&drawn.length);
  if(box.hidden)return;
  ctx.font=font();
- const width=drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+ctx.measureText(seg.text).width)),0);
+ const width=drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+chatTextWidth(ctx,seg.text))),0);
  const size=textSize(),step=size+lineGap(),margin=6;
  const origin=chatOrigin();
  box.style.left=((origin.x-margin)/canvas.width*100)+'%';
@@ -288,7 +289,7 @@ function hitChat(point){
  const size=textSize(),step=size+lineGap(),margin=5;
  ctx.font=font();
  return drawn.some((row,i)=>{
- const width=row.reduce((max,seg)=>Math.max(max,seg.x+ctx.measureText(seg.text).width),0);
+ const width=row.reduce((max,seg)=>Math.max(max,seg.x+chatTextWidth(ctx,seg.text)),0);
  return width>0&&point.x>=origin.x-margin&&point.x<=origin.x+width+margin&&point.y>=origin.y+i*step-margin&&point.y<=origin.y+i*step+size+margin;
  });
 }
@@ -353,7 +354,7 @@ function render(){
  if(layer.cacheKey!==key){load(layer.settings);$('width').value=w;$('height').value=h;pos=layer.pos||null;hidden=new Set(layer.hidden||[]);image=null;imageData=null;$('transparent').checked=true;renderSingle();
  layer.rows=drawn;layer.cache=document.createElement('canvas');layer.cache.width=w;layer.cache.height=h;layer.cache.getContext('2d').drawImage(canvas,0,0);
  // Text layers must remain transparent, independently of the canvas background.
- layer.cacheKey=key;layer.origin=chatOrigin();ctx.font=font();layer.bounds={x:layer.origin.x,y:layer.origin.y,width:drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+ctx.measureText(seg.text).width)),0),height:drawn.length?(drawn.length-1)*(textSize()+lineGap())+(textSize()):0};
+ layer.cacheKey=key;layer.origin=chatOrigin();ctx.font=font();layer.bounds={x:layer.origin.x,y:layer.origin.y,width:drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+chatTextWidth(ctx,seg.text))),0),height:drawn.length?(drawn.length-1)*(textSize()+lineGap())+(textSize()):0};
  }
  if(layer.id===chatLayerId)selectedRows=layer.rows||[];
  }
@@ -439,3 +440,6 @@ function updateSquareSliders(){document.querySelectorAll('input[type=range]').fo
 document.addEventListener('input',updateSquareSliders);
 new MutationObserver(updateSquareSliders).observe($('opacityOutput'),{childList:true});
 updateSquareSliders();
+
+function applySampReference(){ $('font').value='SAMP';$('size').value=10;$('spacing').value=4;$('outline').value=1;$('bold').checked=true;sampGlyphCache.clear();render();status('SAMP reference: 10px bold Arial, 4px line gap, 1px outline.');}
+$('sampReference').onclick=applySampReference;
