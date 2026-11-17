@@ -9,14 +9,14 @@ const sample=`[21:04:12] John Doe says: We got everyone? Good. Let's get to work
 const colors={messageFrom:['Message from','#ffff00'],messageSent:['Message sent to','#eda841'],callPickup:['Call picked up','#ffff00'],prisonPA:['Prison PA / intercom','#3896f3'],inventoryHeader:['Inventory header','#00d000'],inventoryItem:['Inventory items','#ffff00'],shownItem:['Shown items','#56d64b'],scamPhone:['Scam phone messages','#eda841'],takenItem:['Taken item','#56d64b'],shout:['Shouts','#f1f1f1'],propertyCash:['Property transfers','#eda841'],factionHeading:['Faction heading','#00aaff'],factionMember:['Faction members','#939799'],infoNotice:['Info notices','#f1f1f1'],infoLabel:['[INFO] label','#00aaff'],command:['Info commands','#ffba00'],whisper:['Whispers','#ffba00'],carWhisper:['Car whispers','#fbf724'],phone:['Phone · other caller','#fbf724'],pm:['Private messages','#fbf724'],megaphone:['Megaphone','#fbf724'],advert:['Advertisements','#80e500'],transaction:['Item transfers','#56d64b'],speech:['Normal text','#c6c4c4'],action:['/me · /ame','#c2a3da'],lower:['[lower]','#5a5a5b'],low:['[low]','#939799'],death:['Death / failure','#f00000'],important:['Important info','#fbf724'],success:['Success','#56d64b'],warning:['Warning','#eda841'],information:['Information','#3896f3'],white:['Default white','#f1f1f1'],radio:['Radio · light','#ffec8b'],radioDark:['Radio · dark','#a19558'],department:['Department','#ccca15'],vessel:['Vessel traffic','#33c1c9'],alert:['[!] messages','#ff00bc'],ooc:['OOC','#a8b8d8'],bg:['Background','#15181e']};
 const palette=document.querySelector('.palette');palette.replaceChildren();
 for(const [id,[label,color]] of Object.entries(colors)){const l=document.createElement('label'),i=document.createElement('input');i.type='color';i.id=id;i.value=color;l.append(document.createTextNode(label),i);palette.append(l)}
-const ids=['censorMode','textAnchor','textOffset','wrapWidth','exportFormat','jpegQuality','jpegMatte','backgroundX','backgroundY','dragMode','backgroundZoom','character','phonePartner','text','timestamps','font','size','width','height','spacing','outline','padding','bold','transparent',...Object.keys(colors)];
+const ids=['textBackdrop','censorMode','textAnchor','textOffset','wrapWidth','exportFormat','jpegQuality','jpegMatte','backgroundX','backgroundY','dragMode','backgroundZoom','character','phonePartner','text','timestamps','font','size','width','height','spacing','outline','padding','bold','transparent',...Object.keys(colors)];
 let image=null,imageData=null,pos=null,hidden=new Set(),drawn=[],drag=null;
 let jpegPreviewTimer=null,jpegPreviewRevision=0,jpegPreviewURL=null,jpegPreviewBusy=false,draftTimer=null,renderFrame=null;
 const types=Object.keys(colors).filter(x=>x!=='bg');
 for(const type of types){let l=document.createElement('label'),i=document.createElement('input');i.type='checkbox';i.checked=true;i.addEventListener('change',()=>{i.checked?hidden.delete(type):hidden.add(type);render()});l.append(i,document.createTextNode(colors[type][0]));$('filters').append(l)}
 function state(){return {...Object.fromEntries(ids.map(id=>[id,$(id).type==='checkbox'?$(id).checked:$(id).value])),paletteVersion:2}}
 function status(s){$('status').textContent=s}
-function load(s){$('phonePartner').value=s.phonePartner||'';$('censorMode').value=s.censorMode||'black';for(const id of ids)if(s[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!s[id];else $(id).value=s[id]}}
+function load(s){$('textBackdrop').checked=!!s.textBackdrop;$('phonePartner').value=s.phonePartner||'';$('censorMode').value=s.censorMode||'black';for(const id of ids)if(s[id]!==undefined){if($(id).type==='checkbox')$(id).checked=!!s[id];else $(id).value=s[id]}}
 function rpFirstParts(text){
  const clean=text.replace(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/,'');
  const quoted=clean.match(/^\*(?!\*)\s*(.+?)\s+["“]([\s\S]+)["”]\s*$/);
@@ -74,7 +74,10 @@ if(/\(\d+(?:\.\d+)?\s*g\)\s*$/i.test(text))return 'inventoryItem';
 return 'speech';
 }
 function parse(line){let stamp=line.match(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/)?.[0]||'';let text=line.slice(stamp.length).replace(/^\[CHAT\]\s*/,'');let type=classify(text);text=text.replace(/^\/(?:a?me|do)\s+/i,'* ').replace(/^\/b\s+(.+)$/i,'(( $1 ))');return {text:($('timestamps').checked?stamp:'')+text,type}}
-function font(){return `${$('bold').checked?'bold ':''}${+$('size').value}px ${$('font').value}`}
+function textSize(){const size=+$('size').value;return $('font').value==='SAMP'?Math.max(1,Math.round(size*(2/3))):size}
+function font(){const samp=$('font').value==='SAMP';return (samp||$('bold').checked?'bold ':'')+(textSize())+'px '+(samp?'Arial':$('font').value)}
+function lineGap(){const gap=Math.max(0,+$('spacing').value||0);return $('font').value==='SAMP'?Math.round(gap*(2/3)):gap}
+function outlineWidth(){const width=+$('outline').value*2;return $('font').value==='SAMP'?width/2:width}
 function segments(text,color){let parts=[],re=/\{([0-9a-fA-F]{6})\}/g,last=0,m;while((m=re.exec(text))){parts.push({text:text.slice(last,m.index),color});color='#'+m[1];last=re.lastIndex}parts.push({text:text.slice(last),color});return parts}
 function dialogueColor(line){
 const base=$(line.type).value,name=$('character').value.trim().replace(/_/g,' ').replace(/\s+/g,' ').toLowerCase();
@@ -148,6 +151,30 @@ function redactSegments(parts,initial=false){
  for(const part of parts){const chunks=part.text.split('÷');chunks.forEach((text,index)=>{if(index)hidden=!hidden;if(text)out.push({...part,text,redacted:hidden})});}
  return out;
 }
+const sampGlyphCache=new Map();
+function paintSampText(c,seg,x,y,size){
+ const edge=c.lineWidth?Math.max(1,Math.round(c.lineWidth/2)):0,pad=edge+2,key=JSON.stringify([c.font,seg.text,seg.color,edge]);
+ let glyph=sampGlyphCache.get(key);
+ if(!glyph){
+  const mask=document.createElement('canvas');mask.width=Math.max(1,Math.ceil(c.measureText(seg.text).width)+pad*2);mask.height=Math.ceil(size*1.6)+pad*2;
+  const m=mask.getContext('2d');m.font=c.font;m.textBaseline='top';m.fillStyle='#fff';m.fillText(seg.text,pad,pad);
+  const pixels=m.getImageData(0,0,mask.width,mask.height);
+  for(let i=3;i<pixels.data.length;i+=4)pixels.data[i]=sampEdgeAlpha(pixels.data[i]);
+  m.putImageData(pixels,0,0);
+  glyph=document.createElement('canvas');glyph.width=mask.width;glyph.height=mask.height;const g=glyph.getContext('2d');
+  if(edge){for(let dy=-edge;dy<=edge;dy++)for(let dx=-edge;dx<=edge;dx++)g.drawImage(mask,dx,dy);g.globalCompositeOperation='source-in';g.fillStyle='#000';g.fillRect(0,0,glyph.width,glyph.height);g.globalCompositeOperation='source-over';}
+  m.globalCompositeOperation='source-in';m.fillStyle=seg.color;m.fillRect(0,0,mask.width,mask.height);g.drawImage(mask,0,0);
+  if(sampGlyphCache.size>=1500)sampGlyphCache.clear();sampGlyphCache.set(key,glyph);
+ }
+ c.save();c.drawImage(glyph,Math.round(x)-pad,Math.round(y)-pad);c.restore();
+}
+function sampEdgeAlpha(alpha){return Math.round(Math.max(0,Math.min(1,(alpha-45)/180))*255)}
+function paintLineBackdrop(c,row,x,y,size){
+ if(!row.length)return;
+ const width=Math.max(...row.map(seg=>seg.x+c.measureText(seg.text).width));
+ if(!width)return;
+ c.save();c.fillStyle='#000';c.fillRect(Math.floor(x)-3,Math.floor(y)-1,Math.ceil(width)+6,Math.ceil(size)+3);c.restore();
+}
 function paintChatSegment(c,seg,x,y,size){
  if(seg.redacted){
   const mode=$('censorMode').value,w=c.measureText(seg.text).width,h=size+3;
@@ -166,18 +193,20 @@ function paintChatSegment(c,seg,x,y,size){
   }else{c.fillStyle='#000';c.fillRect(x-0.5,y-1,w+1,h);}
   c.restore();return;
  }
+ if($('font').value==='SAMP'){paintSampText(c,seg,x,y,size);return;}
+
  if(c.lineWidth)c.strokeText(seg.text,x,y);c.fillStyle=seg.color;c.fillText(seg.text,x,y);
 }
 $('copyRedaction').onclick=async()=>{try{await navigator.clipboard.writeText('÷');status('Copied ÷ — wrap text in ÷…÷ to apply the selected censor style.')}catch{const input=$('redactionSymbol');input.hidden=false;input.select();status('Select and copy the ÷ symbol.')}};
 function layout(lines,w){ctx.font=font();let rows=[];for(const line of lines){let color=dialogueColor(line);let row=[],x=0;for(const seg of redactSegments(inlineActionSegments(line,color),line.redactStart))for(const word of seg.text.split(/(\s+)/)){let chunks=[word];if(ctx.measureText(word).width>w){chunks=[];let chunk='';for(const char of word){if(ctx.measureText(chunk+char).width>w&&chunk){chunks.push(chunk);chunk=''}chunk+=char}if(chunk)chunks.push(chunk)}for(const chunk of chunks){let width=ctx.measureText(chunk).width;if(x+width>w&&x){rows.push(row);row=[];x=0}row.push({text:chunk,color:seg.color,redacted:seg.redacted,x});x+=width}}rows.push(row)}return rows}
 function chatOrigin(){
  if(pos)return pos;
- const size=+$('size').value,gap=+$('spacing').value||0;
+ const size=textSize(),gap=lineGap();
  const blockHeight=drawn.length?drawn.length*size+(drawn.length-1)*gap:0;
  const offset=Math.max(0,+$('textOffset').value||0);
  return {x:offset,y:$('textAnchor').value==='bottom'?Math.max(0,canvas.height-offset-blockHeight):offset};
 }
-function renderSingle(){let w=Math.max(80,Math.min(6000,+$('width').value||1100)),pad=Math.max(0,+$('padding').value||0),size=+$('size').value,gap=Math.max(0,+$('spacing').value||0);let raw=$('text').value,redacting=false;let lines=raw?raw.split(/\r?\n/).map(line=>{const parsed=parse(line.replace(/\t/g,'    '));parsed.redactStart=redacting;if((line.match(/÷/g)||[]).length%2)redacting=!redacting;return parsed;}).filter(line=>!line.text.trim()||!hidden.has(line.type)):[];const wrap=Math.max(10,Math.min(100,+$('wrapWidth').value||100));drawn=layout(lines,Math.max(1,(w-pad*2)*wrap/100));$('wrapOutput').textContent=wrap+'%';let h=Math.max(80,pad*2+drawn.length*(size+gap));let fixedHeight=+$('height').value;canvas.width=w;canvas.height=fixedHeight?Math.max(80,Math.min(6000,fixedHeight)):image?Math.round(image.height*w/image.width):h;ctx.clearRect(0,0,canvas.width,canvas.height);if(image){let fit=Math.max(canvas.width/image.width,canvas.height/image.height);let zoom=Math.max(0.1,Math.min(5,(+$('backgroundZoom').value||100)/100));let iw=image.width*fit*zoom,ih=image.height*fit*zoom;ctx.drawImage(image,(canvas.width-iw)/2+(+$('backgroundX').value||0),(canvas.height-ih)/2+(+$('backgroundY').value||0),iw,ih);}else if(!$('transparent').checked){ctx.fillStyle=$('bg').value;ctx.fillRect(0,0,canvas.width,canvas.height)}ctx.font=font();ctx.textBaseline='top';ctx.lineJoin='round';let origin=chatOrigin();ctx.lineWidth=+$('outline').value*2;ctx.strokeStyle='#000';drawn.forEach((row,i)=>row.forEach(seg=>{let x=origin.x+seg.x,y=origin.y+i*(size+gap);paintChatSegment(ctx,seg,x,y,size)}));$('count').textContent=lines.length+' lines';$('dimensions').textContent=canvas.width+' × '+canvas.height+' px';$('sizeout').textContent=size+' px';$('empty').hidden=lines.length>0||!!image;canvas.style.display=lines.length||image?'block':'none';if(!buildingLayers){saveDraft();updateChatOutline();queueJPEGPreview();}}
+function renderSingle(){let w=Math.max(80,Math.min(6000,+$('width').value||1100)),pad=Math.max(0,+$('padding').value||0),size=textSize(),gap=lineGap();let raw=$('text').value,redacting=false;let lines=raw?raw.split(/\r?\n/).map(line=>{const parsed=parse(line.replace(/\t/g,'    '));parsed.redactStart=redacting;if((line.match(/÷/g)||[]).length%2)redacting=!redacting;return parsed;}).filter(line=>!line.text.trim()||!hidden.has(line.type)):[];const wrap=Math.max(10,Math.min(100,+$('wrapWidth').value||100));drawn=layout(lines,Math.max(1,(w-pad*2)*wrap/100));$('wrapOutput').textContent=wrap+'%';let h=Math.max(80,pad*2+drawn.length*(size+gap));let fixedHeight=+$('height').value;canvas.width=w;canvas.height=fixedHeight?Math.max(80,Math.min(6000,fixedHeight)):image?Math.round(image.height*w/image.width):h;ctx.clearRect(0,0,canvas.width,canvas.height);if(image){let fit=Math.max(canvas.width/image.width,canvas.height/image.height);let zoom=Math.max(0.1,Math.min(5,(+$('backgroundZoom').value||100)/100));let iw=image.width*fit*zoom,ih=image.height*fit*zoom;ctx.drawImage(image,(canvas.width-iw)/2+(+$('backgroundX').value||0),(canvas.height-ih)/2+(+$('backgroundY').value||0),iw,ih);}else if(!$('transparent').checked){ctx.fillStyle=$('bg').value;ctx.fillRect(0,0,canvas.width,canvas.height)}ctx.font=font();ctx.textBaseline='top';ctx.lineJoin='round';let origin=chatOrigin();ctx.lineWidth=outlineWidth();ctx.strokeStyle='#000';if($('textBackdrop').checked)drawn.forEach((row,i)=>paintLineBackdrop(ctx,row,origin.x,origin.y+i*(size+gap),size));drawn.forEach((row,i)=>row.forEach(seg=>{let x=origin.x+seg.x,y=origin.y+i*(size+gap);paintChatSegment(ctx,seg,x,y,size)}));$('count').textContent=lines.length+' lines';$('dimensions').textContent=canvas.width+' × '+canvas.height+' px';$('sizeout').textContent=size+' px';$('empty').hidden=lines.length>0||!!image;canvas.style.display=lines.length||image?'block':'none';if(!buildingLayers){saveDraft();updateChatOutline();queueJPEGPreview();}}
 function saveDraft(){clearTimeout(draftTimer);draftTimer=setTimeout(()=>{try{localStorage.setItem('chatlog-studio',JSON.stringify(state()))}catch{}},300)}
 function scheduleRender(){if(renderFrame!==null)return;renderFrame=requestAnimationFrame(()=>{renderFrame=null;render()})}
 ids.filter(id=>!['exportFormat','jpegQuality','jpegMatte'].includes(id)).forEach(id=>$(id).addEventListener('input',scheduleRender));
@@ -247,7 +276,7 @@ function updateChatOutline(){
  if(box.hidden)return;
  ctx.font=font();
  const width=drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+ctx.measureText(seg.text).width)),0);
- const size=+$('size').value,step=size+(+$('spacing').value||0),margin=6;
+ const size=textSize(),step=size+lineGap(),margin=6;
  const origin=chatOrigin();
  box.style.left=((origin.x-margin)/canvas.width*100)+'%';
  box.style.top=((origin.y-margin)/canvas.height*100)+'%';
@@ -256,7 +285,7 @@ function updateChatOutline(){
 }
 function hitChat(point){
  const origin=chatOrigin();
- const size=+$('size').value,step=size+(+$('spacing').value||0),margin=5;
+ const size=textSize(),step=size+lineGap(),margin=5;
  ctx.font=font();
  return drawn.some((row,i)=>{
  const width=row.reduce((max,seg)=>Math.max(max,seg.x+ctx.measureText(seg.text).width),0);
@@ -270,7 +299,7 @@ $('resetZoom').onclick=()=>{$('backgroundZoom').value=100;render();status('Backg
 
 // LAYER_ENGINE
 let layers=[],selectedLayerId=null,chatLayerId=null,imageLayerId=null,buildingLayers=false,layerCounter=0,pendingNewImage=false;
-const chatKeys=['censorMode','textAnchor','textOffset','wrapWidth','character','phonePartner','text','timestamps','font','size','spacing','outline','padding','bold',...Object.keys(colors).filter(k=>k!=='bg')];
+const chatKeys=['textBackdrop','censorMode','textAnchor','textOffset','wrapWidth','character','phonePartner','text','timestamps','font','size','spacing','outline','padding','bold',...Object.keys(colors).filter(k=>k!=='bg')];
 function uid(){return 'layer-'+Date.now().toString(36)+'-'+(++layerCounter)}
 function selectedLayer(){return layers.find(l=>l.id===selectedLayerId)}
 function chatLayer(){return layers.find(l=>l.id===chatLayerId&&l.type==='chat')}
@@ -324,7 +353,7 @@ function render(){
  if(layer.cacheKey!==key){load(layer.settings);$('width').value=w;$('height').value=h;pos=layer.pos||null;hidden=new Set(layer.hidden||[]);image=null;imageData=null;$('transparent').checked=true;renderSingle();
  layer.rows=drawn;layer.cache=document.createElement('canvas');layer.cache.width=w;layer.cache.height=h;layer.cache.getContext('2d').drawImage(canvas,0,0);
  // Text layers must remain transparent, independently of the canvas background.
- layer.cacheKey=key;layer.origin=chatOrigin();ctx.font=font();layer.bounds={x:layer.origin.x,y:layer.origin.y,width:drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+ctx.measureText(seg.text).width)),0),height:drawn.length?(drawn.length-1)*(+$('size').value+(+$('spacing').value||0))+(+$('size').value):0};
+ layer.cacheKey=key;layer.origin=chatOrigin();ctx.font=font();layer.bounds={x:layer.origin.x,y:layer.origin.y,width:drawn.reduce((max,row)=>Math.max(max,...row.map(seg=>seg.x+ctx.measureText(seg.text).width)),0),height:drawn.length?(drawn.length-1)*(textSize()+lineGap())+(textSize()):0};
  }
  if(layer.id===chatLayerId)selectedRows=layer.rows||[];
  }
