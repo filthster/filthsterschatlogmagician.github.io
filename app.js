@@ -134,6 +134,10 @@ function styledSegments(line,color){
  out.push({text:body.slice(last),color:$('white').value});return out;
 }
 function inlineActionSegments(line,color){
+ if(line.type==='alert'){
+  const marker=line.text.match(/^(\[\d{1,2}:\d{2}(?::\d{2})?\]\s*)?(\[!\])/);
+  if(marker){const out=[];if(marker[1])out.push({text:marker[1],color:$('white').value});out.push({text:marker[2],color:$('alert').value});out.push(...inlineActionSegments({...line,type:'speech',text:line.text.slice(marker[0].length)},$('white').value));return out;}
+ }
  const leading=rpFirstParts(line.text);
  if(leading){const out=[],stamp=line.text.match(/^\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/);if(stamp)out.push({text:stamp[0],color});out.push(...segments('* '+leading.action,$('action').value));out.push(...inlineActionSegments({...line,text:leading.speech},color));return out;}
 
